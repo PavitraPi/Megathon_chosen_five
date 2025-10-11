@@ -1,1 +1,1 @@
-# Churn prediction apllication by The Chosen Five
+# Churn prediction application by The Chosen Five
