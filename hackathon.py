@@ -200,6 +200,44 @@ import os
 
 warnings.filterwarnings('ignore')
 
+import pandas as pd
+import numpy as np
+
+def preprocess_insurance_data(df):
+    df = df.copy()
+
+    # --- Step 1: Convert datetime columns properly ---
+    date_cols = ['cust_orig_date', 'date_of_birth', 'acct_suspd_date']
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+
+    # --- Step 2: Replace datetime with numeric features ---
+    today = pd.Timestamp('today')
+
+    if 'cust_orig_date' in df.columns:
+        df['cust_orig_days_since'] = (today - df['cust_orig_date']).dt.days
+
+    if 'date_of_birth' in df.columns:
+        df['age'] = (today - df['date_of_birth']).dt.days // 365  # compute actual age
+
+    if 'acct_suspd_date' in df.columns:
+        df['acct_suspd_days_since'] = (today - df['acct_suspd_date']).dt.days.fillna(0)
+
+    # Drop original datetime columns
+    df = df.drop(columns=date_cols, errors='ignore')
+
+    # --- Step 3: Handle categorical columns ---
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
+
+    # --- Step 4: Ensure all are numeric ---
+    df = df.apply(pd.to_numeric, errors='coerce').fillna(0)
+
+    print("✅ Data preprocessing successful.")
+    print("Final columns:", len(df.columns))
+    return df
+
 # ===============================
 # 2. Data Loading
 # ===============================
