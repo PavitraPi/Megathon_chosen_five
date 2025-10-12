@@ -1,0 +1,16 @@
+name: Customer Churn Prediction
+description: Explainable Customer Churn Analysis Dashboard
+author: vyshh09
+version: 1.0.0
+license: MIT
+
+sdk: streamlit
+
+host:
+  streamlit: true
+
+python:
+  version: 3.8
+
+# This will be your custom URL path
+url_path: churn-prediction-insights
