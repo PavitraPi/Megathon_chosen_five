@@ -1,0 +1,14 @@
+Metric,GradientBoosting,XGBoost
+Model Type,GradientBoostingClassifier,XGBClassifier
+Accuracy,0.883,0.872
+Precision,0.124,0.108
+Recall,0.003,0.015
+F1-Score,0.006,0.027
+ROC-AUC,0.506,0.488
+Specificity,0.997,0.983
+Prediction Time (seconds),1.655,0.250
+Extreme Risk Customers,607,0
+High Risk Customers,374,"5,503"
+Total High+Extreme Risk,981,"5,503"
+Revenue at Risk ($),"$1,177,200","$6,603,600"
+High Risk Percentage (%),0.3%,1.6%
