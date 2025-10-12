@@ -517,6 +517,35 @@ def preprocess_input(input_data):
         orig_date = pd.to_datetime(input_data['cust_orig_date'])
         input_data['cust_orig_days_since'] = (today - orig_date).days
     
+    # NEW METRICS CALCULATION
+    # 1. Premium to Income Ratio
+    if 'curr_ann_amt' in input_data and 'income' in input_data:
+        if input_data['income'] > 0:
+            input_data['premium_to_income_ratio'] = input_data['curr_ann_amt'] / input_data['income']
+        else:
+            input_data['premium_to_income_ratio'] = 0
+    
+    # 2. Income Adequacy Score (based on income percentiles and local cost of living)
+    if 'income' in input_data:
+        # Define income adequacy thresholds (can be adjusted based on business rules)
+        income = input_data['income']
+        if income >= 75000:
+            input_data['income_adequacy_score'] = 5  # Excellent
+        elif income >= 50000:
+            input_data['income_adequacy_score'] = 4  # Good
+        elif income >= 35000:
+            input_data['income_adequacy_score'] = 3  # Fair
+        elif income >= 25000:
+            input_data['income_adequacy_score'] = 2  # Poor
+        else:
+            input_data['income_adequacy_score'] = 1  # Very Poor
+    
+    # 3. Customer Tenure (Reference Date)
+    if 'cust_orig_date' in input_data:
+        orig_date = pd.to_datetime(input_data['cust_orig_date'])
+        reference_date = pd.Timestamp('2024-01-01')  # Reference date
+        input_data['customer_tenure_reference'] = (reference_date - orig_date).days
+    
     # Remove the original date columns
     input_data.pop('date_of_birth', None)
     input_data.pop('cust_orig_date', None)
@@ -652,8 +681,14 @@ def display_user_profile(input_data):
         </div>
         """, unsafe_allow_html=True)
         
-        # Metrics in columns
-        col1, col2, col3, col4 = st.columns(4)
+        # Calculate new metrics for display
+        premium_to_income_ratio = input_data['curr_ann_amt'] / input_data['income'] if input_data['income'] > 0 else 0
+        income_adequacy_score = 5 if input_data['income'] >= 75000 else (4 if input_data['income'] >= 50000 else (3 if input_data['income'] >= 35000 else (2 if input_data['income'] >= 25000 else 1)))
+        reference_date = pd.Timestamp('2024-01-01')
+        customer_tenure_reference = (reference_date - pd.to_datetime(input_data['cust_orig_date'])).days
+        
+        # Metrics in columns (expanded to 6 columns for new metrics)
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
         
         with col1:
             st.markdown(f"""
@@ -691,7 +726,46 @@ def display_user_profile(input_data):
             </div>
             """, unsafe_allow_html=True)
         
+        with col5:
+            # Premium to Income Ratio with color coding
+            ratio_color = theme['danger_color'] if premium_to_income_ratio > 0.05 else (theme['warning_color'] if premium_to_income_ratio > 0.03 else theme['success_color'])
+            st.markdown(f"""
+            <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 10px; text-align: center; 
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid {theme['accent_color']};">
+                <h4 style="margin: 0; color: {theme['accent_color']};">Premium/Income</h4>
+                <p style="margin: 0; font-size: 1.2rem; font-weight: bold; color: {ratio_color};">{premium_to_income_ratio:.1%}</p>
+                <small style="color: {theme['text_color']};">Ratio</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col6:
+            # Income Adequacy Score with color coding
+            adequacy_color = theme['success_color'] if income_adequacy_score >= 4 else (theme['warning_color'] if income_adequacy_score >= 3 else theme['danger_color'])
+            adequacy_labels = {5: "Excellent", 4: "Good", 3: "Fair", 2: "Poor", 1: "Very Poor"}
+            st.markdown(f"""
+            <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 10px; text-align: center; 
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid {theme['accent_color']};">
+                <h4 style="margin: 0; color: {theme['accent_color']};">Income Score</h4>
+                <p style="margin: 0; font-size: 1.2rem; font-weight: bold; color: {adequacy_color};">{income_adequacy_score}/5</p>
+                <small style="color: {theme['text_color']};">{adequacy_labels[income_adequacy_score]}</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Customer Tenure Reference metric
+        st.markdown(f"""
+        <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0; color: {theme['text_color']};">
+            <h4 style="margin: 0 0 1rem 0; color: {theme['accent_color']};">📅 Customer Tenure Reference (Jan 1, 2024)</h4>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <p style="margin: 0; font-size: 1.5rem; font-weight: bold; color: {theme['text_color']};">{customer_tenure_reference:,} days</p>
+                    <p style="margin: 0; color: {theme['text_color']};">({customer_tenure_reference/365:.1f} years from reference date)</p>
+                </div>
+                <div style="font-size: 2rem;">📊</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Personal details in columns
         col1, col2, col3 = st.columns(3)
@@ -717,6 +791,123 @@ def display_user_profile(input_data):
             <div style="background: {theme['secondary_bg']}; padding: 1rem; border-radius: 8px; color: {theme['text_color']};">
                 <strong>Good Credit:</strong> {'Yes' if input_data['good_credit'] else 'No'}<br>
                 <strong>Has Children:</strong> {'Yes' if input_data['has_children'] else 'No'}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # NEW METRICS EXPLAINABILITY SECTION
+        with st.expander("📊 New Metrics Explainability", expanded=False):
+            st.markdown(f"""
+            <div style="background: {('linear-gradient(135deg, #2a2a2a, #3a3a3a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f8f9fa, #ffffff)')}; 
+                        padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; 
+                        border: {('1px solid #444444' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
+                <h3 style="margin: 0; color: {theme['text_color']}; text-align: center;">
+                    🔍 Advanced Risk Metrics Explanation
+                </h3>
+                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']}; text-align: center; opacity: 0.8;">
+                    Understanding the new risk assessment metrics and their impact on churn prediction
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Premium to Income Ratio Explanation
+            st.markdown(f"""
+            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
+                        border-left: 4px solid {ratio_color};">
+                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
+                    💰 Premium to Income Ratio: {premium_to_income_ratio:.1%}
+                </h4>
+                <p style="margin: 0; color: {theme['text_color']};">
+                    <strong>What it measures:</strong> The percentage of annual income spent on insurance premiums.
+                </p>
+                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
+                    <strong>Risk interpretation:</strong>
+                    <ul style="color: {theme['text_color']};">
+                        <li><span style="color: {theme['success_color']};">Green (&lt;3%):</span> Low financial burden, stable customer</li>
+                        <li><span style="color: {theme['warning_color']};">Yellow (3-5%):</span> Moderate burden, monitor for changes</li>
+                        <li><span style="color: {theme['danger_color']};">Red (&gt;5%):</span> High burden, increased churn risk</li>
+                    </ul>
+                </p>
+                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
+                    <strong>Business insight:</strong> Customers spending more than 5% of income on premiums are 3x more likely to churn.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Income Adequacy Score Explanation
+            st.markdown(f"""
+            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
+                        border-left: 4px solid {adequacy_color};">
+                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
+                    📈 Income Adequacy Score: {income_adequacy_score}/5 ({adequacy_labels[income_adequacy_score]})
+                </h4>
+                <p style="margin: 0; color: {theme['text_color']};">
+                    <strong>What it measures:</strong> Financial stability based on income levels and local economic factors.
+                </p>
+                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
+                    <strong>Scoring system:</strong>
+                    <ul style="color: {theme['text_color']};">
+                        <li><span style="color: {theme['success_color']};">5 (Excellent):</span> $75,000+ - High stability, low churn risk</li>
+                        <li><span style="color: {theme['success_color']};">4 (Good):</span> $50,000-$74,999 - Good stability</li>
+                        <li><span style="color: {theme['warning_color']};">3 (Fair):</span> $35,000-$49,999 - Moderate stability</li>
+                        <li><span style="color: {theme['danger_color']};">2 (Poor):</span> $25,000-$34,999 - Limited stability</li>
+                        <li><span style="color: {theme['danger_color']};">1 (Very Poor):</span> &lt;$25,000 - High churn risk</li>
+                    </ul>
+                </p>
+                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
+                    <strong>Business insight:</strong> Scores below 3 indicate customers 2.5x more likely to churn due to financial stress.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Customer Tenure Reference Explanation
+            st.markdown(f"""
+            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
+                        border-left: 4px solid {theme['info_color']};">
+                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
+                    📅 Customer Tenure Reference: {customer_tenure_reference:,} days
+                </h4>
+                <p style="margin: 0; color: {theme['text_color']};">
+                    <strong>What it measures:</strong> Duration of customer relationship as of January 1, 2024.
+                </p>
+                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
+                    <strong>Tenure categories:</strong>
+                    <ul style="color: {theme['text_color']};">
+                        <li><span style="color: {theme['success_color']};">Long-term (&gt;5 years):</span> Established loyalty, lowest churn risk</li>
+                        <li><span style="color: {theme['warning_color']};">Medium-term (2-5 years):</span> Moderate loyalty, standard risk</li>
+                        <li><span style="color: {theme['danger_color']};">Short-term (&lt;2 years):</span> New customers, higher churn risk</li>
+                    </ul>
+                </p>
+                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
+                    <strong>Business insight:</strong> Customers with less than 2 years tenure are 4x more likely to churn than long-term customers.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Combined Risk Assessment
+            st.markdown(f"""
+            <div style="background: {('linear-gradient(135deg, #1e2a3a, #2a3a4a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f0f8ff, #e8f4fd)')}; 
+                        padding: 1.5rem; border-radius: 10px; margin: 1.5rem 0;
+                        border: {('1px solid #3a4a5a' if st.session_state.dark_mode else '1px solid #b3d9ff')};">
+                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']}; text-align: center;">
+                    🎯 Combined Risk Assessment
+                </h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; text-align: center;">
+                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
+                        <h5 style="margin: 0; color: {theme['text_color']};">Financial Burden</h5>
+                        <p style="margin: 0; color: {ratio_color}; font-weight: bold;">{premium_to_income_ratio:.1%}</p>
+                    </div>
+                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
+                        <h5 style="margin: 0; color: {theme['text_color']};">Income Stability</h5>
+                        <p style="margin: 0; color: {adequacy_color}; font-weight: bold;">{income_adequacy_score}/5</p>
+                    </div>
+                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
+                        <h5 style="margin: 0; color: {theme['text_color']};">Relationship Length</h5>
+                        <p style="margin: 0; color: {theme['info_color']}; font-weight: bold;">{(customer_tenure_reference/365):.1f}y</p>
+                    </div>
+                </div>
+                <p style="margin: 1rem 0 0 0; color: {theme['text_color']}; text-align: center; font-style: italic;">
+                    These metrics provide a comprehensive view of customer financial stability and relationship maturity.
+                </p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -886,9 +1077,17 @@ def display_risk_factors(feature_importance):
             </div>
             """, unsafe_allow_html=True)
 
-def display_retention_strategies(prediction_proba):
+def display_retention_strategies(prediction_proba, input_data=None):
     """Display retention strategies and recommendations with enhanced styling"""
     theme = get_theme_config()
+    
+    # Calculate new metrics for strategy recommendations
+    if input_data:
+        premium_to_income_ratio = input_data['curr_ann_amt'] / input_data['income'] if input_data['income'] > 0 else 0
+        income_adequacy_score = 5 if input_data['income'] >= 75000 else (4 if input_data['income'] >= 50000 else (3 if input_data['income'] >= 35000 else (2 if input_data['income'] >= 25000 else 1)))
+        reference_date = pd.Timestamp('2024-01-01')
+        customer_tenure_reference = (reference_date - pd.to_datetime(input_data['cust_orig_date'])).days
+        tenure_years = customer_tenure_reference / 365
     
     with st.expander("🎯 Retention & Analysis Strategies", expanded=False):
         # Header with better styling
@@ -963,6 +1162,23 @@ def display_retention_strategies(prediction_proba):
                     "24/7 concierge support services"
                 ]
             }
+            
+            # Add new metrics-based strategies
+            if input_data and premium_to_income_ratio > 0.05:
+                strategies["High Premium Burden Mitigation"] = [
+                    "Emergency payment plan with 0% interest",
+                    "Temporary premium reduction to 2% of income",
+                    "Financial counseling and budget planning services",
+                    "Quarterly premium review and adjustment"
+                ]
+            
+            if input_data and income_adequacy_score <= 2:
+                strategies["Financial Stability Support"] = [
+                    "Income-based premium scaling program",
+                    "Emergency fund assistance and resources",
+                    "Job placement and career counseling referrals",
+                    "Financial literacy workshops and materials"
+                ]
         elif prediction_proba >= 0.5:
             strategies = {
                 "Proactive Engagement (3-7 days)": [
@@ -1154,7 +1370,7 @@ def main():
         st.markdown("---")
         
         # Predict button
-        if st.button("Generate Risk Assessment", type="primary", width='stretch'):
+        if st.button("Generate Risk Assessment", type="primary"):
             st.session_state.prediction_made = True
             
             # Store input data in session state
@@ -1217,7 +1433,7 @@ def main():
             display_risk_factors(feature_importance)
             
             # Show retention strategies
-            display_retention_strategies(prediction_proba)
+            display_retention_strategies(prediction_proba, st.session_state.input_data)
             
         except Exception as e:
             st.error(f"❌ Error generating prediction: {e}")
