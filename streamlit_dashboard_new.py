@@ -15,7 +15,7 @@ warnings.filterwarnings('ignore')
 # Configure Streamlit page
 st.set_page_config(
     page_title="Chubb Churn Detector",
-    page_icon="🛡️",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -479,7 +479,7 @@ def load_models():
         gb_model = joblib.load('./models/GradientBoostingClassifier_churn_prediction_model.pkl')
         models['GradientBoostingClassifier'] = gb_model
     except:
-        st.warning("⚠️ GradientBoostingClassifier model not found")
+        st.warning("GradientBoostingClassifier model not found")
     
     # Try to load XGBoost model
     try:
@@ -490,10 +490,10 @@ def load_models():
             xgb_model = joblib.load('./models/churn_xgboost_optimized.pkl')
             models['XGBoostClassifier'] = xgb_model
         except:
-            st.warning("⚠️ XGBoostClassifier model not found")
+            st.warning("XGBoostClassifier model not found")
     
     if not models:
-        st.error("❌ No models could be loaded!")
+        st.error("No models could be loaded!")
         return {}
     
     return models
@@ -633,51 +633,18 @@ def create_gauge_chart(probability):
     return fig
 
 def create_shap_explanation(model, input_df, model_name):
-    """Create SHAP explanation for the prediction with robust error handling"""
+    """Create SHAP explanation for the prediction"""
     try:
-        # For XGBoost, force create fresh explainer without loading saved files
-        print(f"Creating fresh SHAP TreeExplainer for {model_name}...")
-        
-        # Clear any cached explainers
-        import gc
-        gc.collect()
-        
         explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(input_df)
         
-        # Ensure input is in correct format
-        if hasattr(input_df, 'values'):
-            shap_input = input_df.values.astype(np.float32)  # Ensure float32
-        else:
-            shap_input = np.array(input_df, dtype=np.float32)
-            
-        print(f"Computing SHAP values for input shape: {shap_input.shape}")
-        
-        # For XGBoost, use different approach
-        if 'XGB' in model_name or 'xgb' in str(type(model)).lower():
-            print("Using XGBoost-specific SHAP computation...")
-            shap_values = explainer.shap_values(shap_input, check_additivity=False)
-        else:
-            shap_values = explainer.shap_values(shap_input)
-        
-        # Handle different SHAP output formats
         if isinstance(shap_values, list):
-            if len(shap_values) == 2:
-                # Binary classification - use positive class
-                shap_values_positive = shap_values[1]
-                expected_value = explainer.expected_value[1]
-                print("Using binary classification SHAP values (positive class)")
-            else:
-                # Multi-class - use first class as fallback
-                shap_values_positive = shap_values[0]
-                expected_value = explainer.expected_value[0]
-                print("Using multi-class SHAP values (first class)")
+            shap_values_positive = shap_values[1]
+            expected_value = explainer.expected_value[1]
         else:
-            # Single output
             shap_values_positive = shap_values
             expected_value = explainer.expected_value
-            print("Using single output SHAP values")
         
-        # Create feature importance DataFrame
         feature_importance = pd.DataFrame({
             'feature': input_df.columns,
             'shap_value': shap_values_positive[0],
@@ -687,28 +654,8 @@ def create_shap_explanation(model, input_df, model_name):
         return feature_importance
         
     except Exception as e:
-        print(f"SHAP Error Details: {str(e)}")
-        st.warning(f"⚠️ SHAP analysis failed for {model_name}: {str(e)}")
-        st.info("💡 Using model feature importance as fallback")
-        
-        # Fallback: Create simple feature importance based on model if available
-        try:
-            if hasattr(model, 'feature_importances_'):
-                feature_importance = pd.DataFrame({
-                    'feature': input_df.columns,
-                    'shap_value': model.feature_importances_,  # Use model's built-in importance
-                    'abs_shap_value': np.abs(model.feature_importances_)
-                }).sort_values('abs_shap_value', ascending=False).head(15)
-                
-                st.success("✅ Using model's built-in feature importance instead")
-                return feature_importance
-            else:
-                st.error("❌ No feature importance available")
-                return None
-                
-        except Exception as fallback_error:
-            st.error(f"❌ Fallback failed: {fallback_error}")
-            return None
+        st.error(f"Error creating SHAP explanation: {e}")
+        return None
 
 def display_user_profile(input_data):
     """Display user profile in a professional layout"""
@@ -809,13 +756,12 @@ def display_user_profile(input_data):
         # Customer Tenure Reference metric
         st.markdown(f"""
         <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0; color: {theme['text_color']};">
-            <h4 style="margin: 0 0 1rem 0; color: {theme['accent_color']};">📅 Customer Tenure Reference (Jan 1, 2024)</h4>
+            <h4 style="margin: 0 0 1rem 0; color: {theme['accent_color']};">Customer Tenure Reference (Jan 1, 2024)</h4>
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <p style="margin: 0; font-size: 1.5rem; font-weight: bold; color: {theme['text_color']};">{customer_tenure_reference:,} days</p>
                     <p style="margin: 0; color: {theme['text_color']};">({customer_tenure_reference/365:.1f} years from reference date)</p>
                 </div>
-                <div style="font-size: 2rem;">📊</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -847,120 +793,25 @@ def display_user_profile(input_data):
             </div>
             """, unsafe_allow_html=True)
         
-        # NEW METRICS EXPLAINABILITY SECTION
-        with st.expander("📊 New Metrics Explainability", expanded=False):
+        # Risk Metrics Summary
+        with st.expander("Risk Metrics Summary", expanded=False):
             st.markdown(f"""
-            <div style="background: {('linear-gradient(135deg, #2a2a2a, #3a3a3a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f8f9fa, #ffffff)')}; 
-                        padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; 
-                        border: {('1px solid #444444' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-                <h3 style="margin: 0; color: {theme['text_color']}; text-align: center;">
-                    🔍 Advanced Risk Metrics Explanation
-                </h3>
-                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']}; text-align: center; opacity: 0.8;">
-                    Understanding the new risk assessment metrics and their impact on churn prediction
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Premium to Income Ratio Explanation
-            st.markdown(f"""
-            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
-                        border-left: 4px solid {ratio_color};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
-                    💰 Premium to Income Ratio: {premium_to_income_ratio:.1%}
-                </h4>
-                <p style="margin: 0; color: {theme['text_color']};">
-                    <strong>What it measures:</strong> The percentage of annual income spent on insurance premiums.
-                </p>
-                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
-                    <strong>Risk interpretation:</strong>
-                    <ul style="color: {theme['text_color']};">
-                        <li><span style="color: {theme['success_color']};">Green (&lt;3%):</span> Low financial burden, stable customer</li>
-                        <li><span style="color: {theme['warning_color']};">Yellow (3-5%):</span> Moderate burden, monitor for changes</li>
-                        <li><span style="color: {theme['danger_color']};">Red (&gt;5%):</span> High burden, increased churn risk</li>
-                    </ul>
-                </p>
-                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
-                    <strong>Business insight:</strong> Customers spending more than 5% of income on premiums are 3x more likely to churn.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Income Adequacy Score Explanation
-            st.markdown(f"""
-            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
-                        border-left: 4px solid {adequacy_color};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
-                    📈 Income Adequacy Score: {income_adequacy_score}/5 ({adequacy_labels[income_adequacy_score]})
-                </h4>
-                <p style="margin: 0; color: {theme['text_color']};">
-                    <strong>What it measures:</strong> Financial stability based on income levels and local economic factors.
-                </p>
-                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
-                    <strong>Scoring system:</strong>
-                    <ul style="color: {theme['text_color']};">
-                        <li><span style="color: {theme['success_color']};">5 (Excellent):</span> $75,000+ - High stability, low churn risk</li>
-                        <li><span style="color: {theme['success_color']};">4 (Good):</span> $50,000-$74,999 - Good stability</li>
-                        <li><span style="color: {theme['warning_color']};">3 (Fair):</span> $35,000-$49,999 - Moderate stability</li>
-                        <li><span style="color: {theme['danger_color']};">2 (Poor):</span> $25,000-$34,999 - Limited stability</li>
-                        <li><span style="color: {theme['danger_color']};">1 (Very Poor):</span> &lt;$25,000 - High churn risk</li>
-                    </ul>
-                </p>
-                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
-                    <strong>Business insight:</strong> Scores below 3 indicate customers 2.5x more likely to churn due to financial stress.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Customer Tenure Reference Explanation
-            st.markdown(f"""
-            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1rem 0;
-                        border-left: 4px solid {theme['info_color']};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']};">
-                    📅 Customer Tenure Reference: {customer_tenure_reference:,} days
-                </h4>
-                <p style="margin: 0; color: {theme['text_color']};">
-                    <strong>What it measures:</strong> Duration of customer relationship as of January 1, 2024.
-                </p>
-                <p style="margin: 0.5rem 0; color: {theme['text_color']};">
-                    <strong>Tenure categories:</strong>
-                    <ul style="color: {theme['text_color']};">
-                        <li><span style="color: {theme['success_color']};">Long-term (&gt;5 years):</span> Established loyalty, lowest churn risk</li>
-                        <li><span style="color: {theme['warning_color']};">Medium-term (2-5 years):</span> Moderate loyalty, standard risk</li>
-                        <li><span style="color: {theme['danger_color']};">Short-term (&lt;2 years):</span> New customers, higher churn risk</li>
-                    </ul>
-                </p>
-                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']};">
-                    <strong>Business insight:</strong> Customers with less than 2 years tenure are 4x more likely to churn than long-term customers.
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Combined Risk Assessment
-            st.markdown(f"""
-            <div style="background: {('linear-gradient(135deg, #1e2a3a, #2a3a4a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f0f8ff, #e8f4fd)')}; 
-                        padding: 1.5rem; border-radius: 10px; margin: 1.5rem 0;
-                        border: {('1px solid #3a4a5a' if st.session_state.dark_mode else '1px solid #b3d9ff')};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']}; text-align: center;">
-                    🎯 Combined Risk Assessment
-                </h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; text-align: center;">
-                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
-                        <h5 style="margin: 0; color: {theme['text_color']};">Financial Burden</h5>
-                        <p style="margin: 0; color: {ratio_color}; font-weight: bold;">{premium_to_income_ratio:.1%}</p>
-                    </div>
-                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
-                        <h5 style="margin: 0; color: {theme['text_color']};">Income Stability</h5>
-                        <p style="margin: 0; color: {adequacy_color}; font-weight: bold;">{income_adequacy_score}/5</p>
-                    </div>
-                    <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px;">
-                        <h5 style="margin: 0; color: {theme['text_color']};">Relationship Length</h5>
-                        <p style="margin: 0; color: {theme['info_color']}; font-weight: bold;">{(customer_tenure_reference/365):.1f}y</p>
-                    </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; text-align: center; margin: 1rem 0;">
+                <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px; border: 1px solid {theme['accent_color']};">
+                    <h5 style="margin: 0; color: {theme['text_color']};">Premium/Income</h5>
+                    <p style="margin: 0; color: {ratio_color}; font-weight: bold; font-size: 1.2rem;">{premium_to_income_ratio:.1%}</p>
+                    <small style="color: {theme['text_color']}; opacity: 0.8;">Higher ratio increases churn risk</small>
                 </div>
-                <p style="margin: 1rem 0 0 0; color: {theme['text_color']}; text-align: center; font-style: italic;">
-                    These metrics provide a comprehensive view of customer financial stability and relationship maturity.
-                </p>
+                <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px; border: 1px solid {theme['accent_color']};">
+                    <h5 style="margin: 0; color: {theme['text_color']};">Income Score</h5>
+                    <p style="margin: 0; color: {adequacy_color}; font-weight: bold; font-size: 1.2rem;">{income_adequacy_score}/5</p>
+                    <small style="color: {theme['text_color']}; opacity: 0.8;">Lower scores indicate higher churn risk</small>
+                </div>
+                <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 8px; border: 1px solid {theme['accent_color']};">
+                    <h5 style="margin: 0; color: {theme['text_color']};">Tenure</h5>
+                    <p style="margin: 0; color: {theme['info_color']}; font-weight: bold; font-size: 1.2rem;">{(customer_tenure_reference/365):.1f}y</p>
+                    <small style="color: {theme['text_color']}; opacity: 0.8;">Longer tenure reduces churn risk</small>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1021,85 +872,11 @@ def display_risk_factors(feature_importance):
     """Display risk factors analysis with enhanced styling"""
     theme = get_theme_config()
     
-    # Create a more visually appealing expandable section
-    with st.expander("🔍 Risk Factors Analysis", expanded=False):
+    with st.expander("Risk Factors Analysis", expanded=False):
         if feature_importance is not None:
-            # Header with better styling
-            st.markdown(f"""
-            <div style="background: {('linear-gradient(135deg, #2a2a2a, #3a3a3a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f8f9fa, #ffffff)')}; 
-                        padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; 
-                        border: {('1px solid #444444' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-                <h3 style="margin: 0; color: {theme['text_color']}; text-align: center;">
-                    📊 Top Contributing Factors
-                </h3>
-                <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']}; text-align: center; opacity: 0.8;">
-                    SHAP analysis shows how each feature impacts the churn prediction
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Create two columns for positive and negative factors
-            col1, col2 = st.columns(2)
-            
-            positive_factors = feature_importance[feature_importance['shap_value'] > 0].head(5)
-            negative_factors = feature_importance[feature_importance['shap_value'] < 0].head(5)
-            
-            with col1:
-                st.markdown(f"""
-                <div style="background: {('linear-gradient(135deg, #2d1b1b, #3d2626)' if st.session_state.dark_mode else 'linear-gradient(135deg, #fef2f2, #fee2e2)')}; 
-                            padding: 1rem; border-radius: 10px; margin-bottom: 1rem;
-                            border: {('1px solid #4d2626' if st.session_state.dark_mode else '1px solid #fecaca')};">
-                    <h4 style="margin: 0; color: {theme['danger_color']}; text-align: center;">
-                        ⚠️ Factors Increasing Risk
-                    </h4>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                for idx, row in positive_factors.iterrows():
-                    st.markdown(f"""
-                    <div style="background: {theme['card_bg']}; padding: 1rem; margin: 0.8rem 0; 
-                                border-radius: 8px; border-left: 4px solid {theme['danger_color']};
-                                box-shadow: {('0 2px 4px rgba(255,255,255,0.1)' if st.session_state.dark_mode else '0 2px 4px rgba(0,0,0,0.1)')};">
-                        <strong style="color: {theme['text_color']};">{row['feature']}</strong><br>
-                        <small style="color: {theme['danger_color']};">Impact: +{row['shap_value']:.3f}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div style="background: {('linear-gradient(135deg, #1b2d1b, #263d26)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f0fdf4, #dcfce7)')}; 
-                            padding: 1rem; border-radius: 10px; margin-bottom: 1rem;
-                            border: {('1px solid #2d4d2d' if st.session_state.dark_mode else '1px solid #bbf7d0')};">
-                    <h4 style="margin: 0; color: {theme['success_color']}; text-align: center;">
-                        ✅ Factors Decreasing Risk
-                    </h4>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                for idx, row in negative_factors.iterrows():
-                    st.markdown(f"""
-                    <div style="background: {theme['card_bg']}; padding: 1rem; margin: 0.8rem 0; 
-                                border-radius: 8px; border-left: 4px solid {theme['success_color']};
-                                box-shadow: {('0 2px 4px rgba(255,255,255,0.1)' if st.session_state.dark_mode else '0 2px 4px rgba(0,0,0,0.1)')};">
-                        <strong style="color: {theme['text_color']};">{row['feature']}</strong><br>
-                        <small style="color: {theme['success_color']};">Impact: {row['shap_value']:.3f}</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Feature importance chart with better styling
-            st.markdown(f"""
-            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin-top: 2rem;
-                        border: {('1px solid #333333' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']}; text-align: center;">
-                    📈 Feature Importance Visualization
-                </h4>
-            </div>
-            """, unsafe_allow_html=True)
-            
             # Prepare data for plotting
             plot_data = feature_importance.head(10).copy()
             plot_data['Impact Type'] = plot_data['shap_value'].apply(lambda x: 'Increases Risk' if x > 0 else 'Decreases Risk')
-            plot_data['Absolute Impact'] = plot_data['shap_value'].abs()
             
             fig = px.bar(
                 plot_data,
@@ -1112,12 +889,14 @@ def display_risk_factors(feature_importance):
             )
             
             fig.update_layout(
-                height=500,
-                yaxis={'categoryorder': 'total ascending'},
+                height=400,
+                yaxis={'categoryorder': 'total ascending', 'tickfont': {'color': theme['text_color']}, 'titlefont': {'color': theme['text_color']}},
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 font={'color': theme['text_color']},
-                title_font_color=theme['text_color']
+                title_font_color=theme['text_color'],
+                xaxis={'tickfont': {'color': theme['text_color']}, 'titlefont': {'color': theme['text_color']}},
+                legend={'font': {'color': theme['text_color']}}
             )
             
             st.plotly_chart(fig, width='stretch')
@@ -1125,7 +904,7 @@ def display_risk_factors(feature_importance):
             st.markdown(f"""
             <div style="background: {theme['card_bg']}; padding: 2rem; border-radius: 10px; text-align: center;
                         border: {('1px solid #333333' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-                <h4 style="color: {theme['warning_color']};">⚠️ Analysis Unavailable</h4>
+                <h4 style="color: {theme['warning_color']};">Analysis Unavailable</h4>
                 <p style="color: {theme['text_color']};">Unable to generate risk factor analysis for this prediction.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -1142,30 +921,16 @@ def display_retention_strategies(prediction_proba, input_data=None):
         customer_tenure_reference = (reference_date - pd.to_datetime(input_data['cust_orig_date'])).days
         tenure_years = customer_tenure_reference / 365
     
-    with st.expander("🎯 Retention & Analysis Strategies", expanded=False):
-        # Header with better styling
-        st.markdown(f"""
-        <div style="background: {('linear-gradient(135deg, #1e2a3a, #2a3a4a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f0f8ff, #e8f4fd)')}; 
-                    padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; 
-                    border: {('1px solid #3a4a5a' if st.session_state.dark_mode else '1px solid #b3d9ff')};">
-            <h3 style="margin: 0; color: {theme['text_color']}; text-align: center;">
-                🎯 Customized Retention Plan
-            </h3>
-            <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']}; text-align: center; opacity: 0.8;">
-                Personalized strategies based on churn risk assessment
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
+    with st.expander("Retention Strategies", expanded=False):
         # Risk level assessment
         if prediction_proba >= 0.7:
             risk_level = "EXTREME"
             risk_color = theme['danger_color']
-            urgency = "Immediate Action Required (24-48 hours)"
+            urgency = "Immediate Action (24-48 hours)"
         elif prediction_proba >= 0.5:
             risk_level = "HIGH"
             risk_color = theme['warning_color']
-            urgency = "Proactive Measures Needed (3-7 days)"
+            urgency = "Proactive Measures (3-7 days)"
         elif prediction_proba >= 0.25:
             risk_level = "MEDIUM"
             risk_color = theme['info_color']
@@ -1177,9 +942,8 @@ def display_retention_strategies(prediction_proba, input_data=None):
         
         # Risk level indicator
         st.markdown(f"""
-        <div style="background: {theme['card_bg']}; padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem;
-                    border-left: 5px solid {risk_color}; 
-                    box-shadow: {('0 4px 8px rgba(255,255,255,0.1)' if st.session_state.dark_mode else '0 4px 8px rgba(0,0,0,0.1)')};">
+        <div style="background: {theme['card_bg']}; padding: 1rem; border-radius: 10px; margin-bottom: 1rem;
+                    border-left: 5px solid {risk_color};">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h4 style="margin: 0; color: {theme['text_color']};">Risk Level: 
@@ -1187,168 +951,50 @@ def display_retention_strategies(prediction_proba, input_data=None):
                     </h4>
                     <p style="margin: 0.5rem 0 0 0; color: {theme['text_color']}; opacity: 0.8;">{urgency}</p>
                 </div>
-                <div style="font-size: 2rem;">
-                    {'🚨' if risk_level == 'EXTREME' else '⚠️' if risk_level == 'HIGH' else '📊' if risk_level == 'MEDIUM' else '✅'}
+                <div style="font-size: 1.5rem;">
+                    {'!' if risk_level == 'EXTREME' else '!' if risk_level == 'HIGH' else '!' if risk_level == 'MEDIUM' else '✓'}
                 </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         if prediction_proba >= 0.7:
-            strategies = {
-                "Immediate Actions (24-48 hours)": [
-                    "Personal call from senior relationship manager",
-                    "Offer 20-30% premium discount for next renewal",
-                    "Expedite any pending claims or service requests",
-                    "Schedule face-to-face meeting if local"
-                ],
-                "Financial Incentives": [
-                    "Premium reduction or payment plan options",
-                    "Loyalty bonus or cashback program enrollment",
-                    "Waive deductibles for next 6 months",
-                    "Multi-policy bundle discounts"
-                ],
-                "Value-Added Services": [
-                    "Complimentary policy review and optimization",
-                    "Free additional coverage upgrades",
-                    "Priority claims processing",
-                    "24/7 concierge support services"
-                ]
-            }
-            
-            # Add new metrics-based strategies
-            if input_data and premium_to_income_ratio > 0.05:
-                strategies["High Premium Burden Mitigation"] = [
-                    "Emergency payment plan with 0% interest",
-                    "Temporary premium reduction to 2% of income",
-                    "Financial counseling and budget planning services",
-                    "Quarterly premium review and adjustment"
-                ]
-            
-            if input_data and income_adequacy_score <= 2:
-                strategies["Financial Stability Support"] = [
-                    "Income-based premium scaling program",
-                    "Emergency fund assistance and resources",
-                    "Job placement and career counseling referrals",
-                    "Financial literacy workshops and materials"
-                ]
+            strategies = [
+                "Personal call from senior relationship manager",
+                "Offer 20-30% premium discount for next renewal",
+                "Expedite any pending claims or service requests",
+                "Premium reduction or payment plan options"
+            ]
         elif prediction_proba >= 0.5:
-            strategies = {
-                "Proactive Engagement (3-7 days)": [
-                    "Outbound satisfaction survey call",
-                    "Policy benefits and usage review",
-                    "Competitive analysis and value demonstration",
-                    "Address any service concerns proactively"
-                ],
-                "Targeted Offers": [
-                    "10-15% renewal discount",
-                    "New feature or coverage introduction",
-                    "Referral program with incentives",
-                    "Flexible payment options"
-                ],
-                "Monitoring Plan": [
-                    "Monthly engagement tracking",
-                    "Claims satisfaction follow-up",
-                    "Renewal reminder 90 days early",
-                    "Usage pattern analysis"
-                ]
-            }
+            strategies = [
+                "Outbound satisfaction survey call",
+                "Policy benefits and usage review",
+                "10-15% renewal discount",
+                "Monthly engagement tracking"
+            ]
         elif prediction_proba >= 0.25:
-            strategies = {
-                "Relationship Maintenance": [
-                    "Quarterly check-in calls",
-                    "Annual policy review meeting",
-                    "Educational content and tips sharing",
-                    "Community events invitation"
-                ],
-                "Engagement Opportunities": [
-                    "New product announcements",
-                    "Loyalty program participation",
-                    "Customer feedback surveys",
-                    "Cross-selling complementary products"
-                ],
-                "Growth Initiatives": [
-                    "Life changes consultation",
-                    "Coverage gap analysis",
-                    "Family member referral program",
-                    "Digital tools and app promotion"
-                ]
-            }
+            strategies = [
+                "Quarterly check-in calls",
+                "Annual policy review meeting",
+                "New product announcements",
+                "Coverage gap analysis"
+            ]
         else:
-            strategies = {
-                "Customer Advocacy": [
-                    "Reference customer program",
-                    "Case study participation",
-                    "Testimonial opportunities",
-                    "Beta testing new features"
-                ],
-                "Growth & Upsell": [
-                    "Additional coverage consultation",
-                    "Premium service tier upgrades",
-                    "Family and friends referral bonus",
-                    "Partnership benefits access"
-                ],
-                "Long-term Partnership": [
-                    "VIP customer recognition",
-                    "Advisory board invitation",
-                    "Exclusive events and experiences",
-                    "Thought leadership opportunities"
-                ]
-            }
+            strategies = [
+                "Reference customer program",
+                "Additional coverage consultation",
+                "VIP customer recognition",
+                "Exclusive events and experiences"
+            ]
         
-        # Display strategies in enhanced cards
-        for category, actions in strategies.items():
+        # Display strategies in simple list
+        for action in strategies:
             st.markdown(f"""
-            <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin: 1.5rem 0;
-                        border: {('1px solid #333333' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-                <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']}; text-align: center; 
-                           border-bottom: {('2px solid #444444' if st.session_state.dark_mode else '2px solid #e5e7eb')}; 
-                           padding-bottom: 0.5rem;">
-                    {category}
-                </h4>
+            <div style="background: {theme['card_bg']}; padding: 0.8rem; margin: 0.5rem 0; 
+                       border-radius: 8px; border-left: 4px solid {theme['primary_color']};">
+                <span style="color: {theme['text_color']};">{action}</span>
             </div>
             """, unsafe_allow_html=True)
-            
-            for action in actions:
-                st.markdown(f"""
-                <div style="background: {theme['card_bg']}; padding: 1rem; margin: 0.8rem 0; 
-                           border-radius: 8px; border-left: 4px solid {theme['primary_color']};
-                           box-shadow: {('0 2px 4px rgba(255,255,255,0.1)' if st.session_state.dark_mode else '0 2px 4px rgba(0,0,0,0.1)')};
-                           transition: transform 0.2s ease;">
-                    <div style="display: flex; align-items: center;">
-                        <span style="color: {theme['primary_color']}; margin-right: 0.8rem; font-size: 1.2rem;">•</span>
-                        <span style="color: {theme['text_color']}; line-height: 1.4;">{action}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        # Timeline section with enhanced styling
-        st.markdown(f"""
-        <div style="background: {theme['secondary_bg']}; padding: 1.5rem; border-radius: 10px; margin-top: 2rem;
-                    border: {('1px solid #333333' if st.session_state.dark_mode else '1px solid #e5e7eb')};">
-            <h4 style="margin: 0 0 1rem 0; color: {theme['text_color']}; text-align: center;">
-                ⏰ Implementation Timeline
-            </h4>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        timeline_data = {
-            "EXTREME": "24-48 hours: Immediate intervention required",
-            "HIGH": "3-7 days: Proactive outreach and engagement",
-            "MEDIUM": "2-4 weeks: Scheduled touchpoints and monitoring",
-            "LOW": "Quarterly: Regular relationship maintenance"
-        }
-        
-        st.markdown(f"""
-        <div style="background: {('linear-gradient(135deg, #2a2a2a, #3a3a3a)' if st.session_state.dark_mode else 'linear-gradient(135deg, #f0f9ff, #e0f2fe)')}; 
-                    color: {theme['text_color']}; padding: 1.5rem; border-radius: 10px; text-align: center; margin-top: 1rem;
-                    border: {('1px solid #444444' if st.session_state.dark_mode else '1px solid #bae6fd')};">
-            <div style="font-size: 1.1rem;">
-                <strong>⚡ Recommended Timeline:</strong><br>
-                <span style="color: {risk_color}; font-weight: bold;">{timeline_data[risk_level]}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
 
 def main():
     # Apply custom CSS
@@ -1372,7 +1018,7 @@ def main():
     # Load models
     models = load_models()
     if not models:
-        st.error("❌ No models available. Please check the models directory.")
+        st.error(" No models available. Please check the models directory.")
         return
     
     # Sidebar - 30% width for inputs
@@ -1470,61 +1116,8 @@ def main():
             else:
                 feature_vector = pd.DataFrame([processed_data])
             
-            # INTELLIGENT HARDCODE FOR DEMO - Based on actual risk factors
-            
-            # Calculate realistic risk based on business logic
-            input_data = st.session_state.input_data
-            
-            # Calculate premium burden
-            premium_burden = input_data['curr_ann_amt'] / input_data['income'] if input_data['income'] > 0 else 0.1
-            
-            # Start with base risk
-            risk_score = 0.15  # Base 15% risk
-            
-            # High premium burden = high risk
-            if premium_burden > 0.15:
-                risk_score += 0.25
-            elif premium_burden > 0.10:
-                risk_score += 0.15
-            elif premium_burden > 0.05:
-                risk_score += 0.10
-            
-            # Short tenure = high risk (new customers churn more)
-            if input_data['days_tenure'] < 365:
-                risk_score += 0.20
-            elif input_data['days_tenure'] < 730:
-                risk_score += 0.10
-            
-            # Age factors
-            if input_data['age_in_years'] < 30:
-                risk_score += 0.10
-            elif input_data['age_in_years'] > 70:
-                risk_score += 0.08
-            
-            # High-risk Texas cities
-            high_risk_cities = ['Dallas', 'Houston', 'Austin', 'Garland', 'Irving', 'Mesquite', 'Terrell', 'Fort Worth']
-            if input_data.get('city', '') in high_risk_cities:
-                risk_score += 0.15
-            
-            # Financial stability
-            if input_data.get('good_credit') == 'No':
-                risk_score += 0.12
-            if input_data.get('home_owner') == 'No':
-                risk_score += 0.08
-            if input_data.get('college_degree') == 'No':
-                risk_score += 0.05
-            if input_data.get('marital_status') == 'Single':
-                risk_score += 0.08
-            
-            # Cap at realistic maximum
-            prediction_proba = min(risk_score, 0.85)
-            
-            print(f"🎯 INTELLIGENT DEMO PREDICTION:")
-            print(f"   Premium Burden: {premium_burden:.1%}")
-            print(f"   Risk Factors Applied: Multiple")
-            print(f"   Final Risk Score: {prediction_proba:.1%}")
-            
-            # Make prediction (original - just for logging)
+            # Make prediction
+            prediction_proba = model.predict_proba(feature_vector)[:, 1][0]
             
             # Show user profile
             display_user_profile(st.session_state.input_data)
@@ -1542,24 +1135,24 @@ def main():
             display_retention_strategies(prediction_proba, st.session_state.input_data)
             
         except Exception as e:
-            st.error(f"❌ Error generating prediction: {e}")
+            st.error(f"Error generating prediction: {e}")
             st.session_state.prediction_made = False
     
     else:
         # Welcome screen
-        st.markdown("### Welcome to Chubb's AI-Powered Risk Assessment Platform")
+        st.markdown("### Chubb AI Risk Assessment Platform")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
             st.markdown(f"""
             <div class="custom-card">
-                <h4 style="color: {get_theme_config()['accent_color']};">What You'll Get</h4>
+                <h4 style="color: {get_theme_config()['accent_color']};">Features</h4>
                 <ul style="color: {get_theme_config()['text_color']};">
-                    <li>Customer profile overview</li>
-                    <li>AI-powered churn probability</li>
-                    <li>Risk level categorization</li>
-                    <li>Detailed factor analysis</li>
+                    <li>Customer profile analysis</li>
+                    <li>AI-powered churn prediction</li>
+                    <li>Risk factor identification</li>
+                    <li>Retention strategies</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
@@ -1567,42 +1160,13 @@ def main():
         with col2:
             st.markdown(f"""
             <div class="custom-card">
-                <h4 style="color: {get_theme_config()['accent_color']};">AI Analysis</h4>
+                <h4 style="color: {get_theme_config()['accent_color']};">Available Models</h4>
                 <ul style="color: {get_theme_config()['text_color']};">
-                    <li>SHAP explainable AI</li>
-                    <li>Feature importance ranking</li>
-                    <li>Risk factor identification</li>
-                    <li>Behavioral pattern insights</li>
+                    <li>GradientBoostingClassifier</li>
+                    <li>XGBoostClassifier</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="custom-card">
-                <h4 style="color: {get_theme_config()['accent_color']};">Business Actions</h4>
-                <ul style="color: {get_theme_config()['text_color']};">
-                    <li>Customized retention strategies</li>
-                    <li>Actionable recommendations</li>
-                    <li>Implementation timelines</li>
-                    <li>Success metrics tracking</li>
-                </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Available models info
-        st.markdown("---")
-        st.markdown("### Available AI Models")
-        
-        model_cols = st.columns(len(models))
-        for i, (model_name, model) in enumerate(models.items()):
-            with model_cols[i]:
-                features_count = len(model.feature_names_in_) if hasattr(model, 'feature_names_in_') else "Unknown"
-                st.metric(
-                    label=f"{model_name}",
-                    value="Ready",
-                    delta=f"{features_count} features"
-                )
 
 if __name__ == "__main__":
     main()
